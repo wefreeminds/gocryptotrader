@@ -32,33 +32,40 @@ type Config struct {
 
 // ExchangeConfig holds all the information needed for each enabled Exchange.
 type ExchangeConfig struct {
-	Name                      string                    `json:"name"`
-	Enabled                   bool                      `json:"enabled"`
-	Verbose                   bool                      `json:"verbose"`
-	Websocket                 bool                      `json:"websocket"`
-	UseSandbox                bool                      `json:"useSandbox"`
-	RESTPollingDelay          time.Duration             `json:"restPollingDelay"`
-	HTTPTimeout               time.Duration             `json:"httpTimeout"`
-	HTTPUserAgent             string                    `json:"httpUserAgent"`
-	AuthenticatedAPISupport   bool                      `json:"authenticatedApiSupport"`
-	APIKey                    string                    `json:"apiKey"`
-	APISecret                 string                    `json:"apiSecret"`
-	APIAuthPEMKeySupport      bool                      `json:"apiAuthPemKeySupport,omitempty"`
-	APIAuthPEMKey             string                    `json:"apiAuthPemKey,omitempty"`
-	APIURL                    string                    `json:"apiUrl"`
-	APIURLSecondary           string                    `json:"apiUrlSecondary"`
-	ProxyAddress              string                    `json:"proxyAddress"`
-	WebsocketURL              string                    `json:"websocketUrl"`
-	ClientID                  string                    `json:"clientId,omitempty"`
-	AvailablePairs            string                    `json:"availablePairs"`
-	EnabledPairs              string                    `json:"enabledPairs"`
-	BaseCurrencies            string                    `json:"baseCurrencies"`
-	AssetTypes                string                    `json:"assetTypes"`
-	SupportsAutoPairUpdates   bool                      `json:"supportsAutoPairUpdates"`
-	PairsLastUpdated          int64                     `json:"pairsLastUpdated,omitempty"`
-	ConfigCurrencyPairFormat  *CurrencyPairFormatConfig `json:"configCurrencyPairFormat"`
-	RequestCurrencyPairFormat *CurrencyPairFormatConfig `json:"requestCurrencyPairFormat"`
-	BankAccounts              []BankAccount             `json:"bankAccounts"`
+	Name            string               `json:"name"`
+	Enabled         bool                 `json:"enabled"`
+	Verbose         bool                 `json:"verbose"`
+	UseSandbox      bool                 `json:"useSandbox,omitempty"`
+	HTTPTimeout     time.Duration        `json:"httpTimeout"`
+	HTTPUserAgent   string               `json:"httpUserAgent,omitempty"`
+	HTTPRateLimiter *HTTPRateLimitConfig `json:"httpRateLimiter,omitempty"`
+	ProxyAddress    string               `json:"proxyAddress,omitempty"`
+
+	BaseCurrencies string               `json:"baseCurrencies"`
+	CurrencyPairs  *CurrencyPairsConfig `json:"currencyPairs"`
+	API            APIConfig            `json:"api"`
+
+	Features     *FeaturesConfig `json:"features"`
+	BankAccounts []BankAccount   `json:"bankAccounts,omitempty"`
+
+	// Deprecated settings which will be removed in a future update
+	AvailablePairs            *string                   `json:"availablePairs,omitempty"`
+	EnabledPairs              *string                   `json:"enabledPairs,omitempty"`
+	AssetTypes                *string                   `json:"assetTypes,omitempty"`
+	PairsLastUpdated          *int64                    `json:"pairsLastUpdated,omitempty"`
+	ConfigCurrencyPairFormat  *CurrencyPairFormatConfig `json:"configCurrencyPairFormat,omitempty"`
+	RequestCurrencyPairFormat *CurrencyPairFormatConfig `json:"requestCurrencyPairFormat,omitempty"`
+	AuthenticatedAPISupport   *bool                     `json:"authenticatedApiSupport,omitempty"`
+	APIKey                    *string                   `json:"apiKey,omitempty"`
+	APISecret                 *string                   `json:"apiSecret,omitempty"`
+	APIAuthPEMKeySupport      *bool                     `json:"apiAuthPemKeySupport,omitempty"`
+	APIAuthPEMKey             *string                   `json:"apiAuthPemKey,omitempty"`
+	APIURL                    *string                   `json:"apiUrl,omitempty"`
+	APIURLSecondary           *string                   `json:"apiUrlSecondary,omitempty"`
+	ClientID                  *string                   `json:"clientId,omitempty"`
+	SupportsAutoPairUpdates   *bool                     `json:"supportsAutoPairUpdates,omitempty"`
+	Websocket                 *bool                     `json:"websocket,omitempty"`
+	WebsocketURL              *string                   `json:"websocketUrl,omitempty"`
 }
 
 // RESTConfig struct holds the prestart variables for the webserver.
@@ -177,4 +184,92 @@ type TelegramConfig struct {
 	Enabled           bool   `json:"enabled"`
 	Verbose           bool   `json:"verbose"`
 	VerificationToken string `json:"verificationToken"`
+}
+
+// FeaturesSupportedConfig stores the exchanges supported features
+type FeaturesSupportedConfig struct {
+	REST               bool `json:"restAPI"`
+	Websocket          bool `json:"websocketAPI"`
+	AutoPairUpdates    bool `json:"autoPairUpdates"`
+	RESTTickerBatching bool `json:"restTickerBatching"`
+}
+
+// FeaturesEnabledConfig stores the exchanges enabled features
+type FeaturesEnabledConfig struct {
+	AutoPairUpdates bool `json:"autoPairUpdates"`
+	Websocket       bool `json:"websocketAPI"`
+}
+
+// FeaturesConfig stores the exchanges supported and enabled features
+type FeaturesConfig struct {
+	Supports FeaturesSupportedConfig `json:"supports"`
+	Enabled  FeaturesEnabledConfig   `json:"enabled"`
+}
+
+// APIConfig stores the exchange API config
+type APIConfig struct {
+	AuthenticatedSupport bool `json:"authenticatedSupport"`
+	PEMKeySupport        bool `json:"pemKeySupport,omitempty"`
+
+	Endpoints struct {
+		URL          string `json:"url"`
+		URLSecondary string `json:"urlSecondary"`
+		WebsocketURL string `json:"websocketURL"`
+	} `json:"endpoints"`
+
+	Credentials struct {
+		Key      string `json:"key"`
+		Secret   string `json:"secret"`
+		ClientID string `json:"clientID,omitempty"`
+		PEMKey   string `json:"pemKey,omitempty"`
+	} `json:"credentials"`
+
+	CredentialsValidator struct {
+		// For Huobi (optional)
+		RequiresPEM bool `json:"requiresPEM,omitempty"`
+
+		RequiresClientID           bool `json:"requiresClientID"`
+		RequiresBase64DecodeSecret bool `json:"requiresBase64DecodeSecret"`
+	} `json:"credentialsValidator"`
+}
+
+// HTTPRateLimitConfig stores the rate limit config
+type HTTPRateLimitConfig struct {
+	Unauthenticated struct {
+		Duration time.Duration `json:"duration"`
+		Rate     int           `json:"rate"`
+	} `json:"unauthenticated"`
+
+	Authenticated struct {
+		Duration time.Duration `json:"duration"`
+		Rate     int           `json:"rate"`
+	} `json:"authenticated"`
+}
+
+// CurrencyPairConfig stores a list of enable/available
+// currency pairs and their storage/request format
+type CurrencyPairConfig struct {
+	Enabled       string                    `json:"enabled,omitempty"`
+	Available     string                    `json:"available,omitempty"`
+	RequestFormat *CurrencyPairFormatConfig `json:"requestFormat,omitempty"`
+	ConfigFormat  *CurrencyPairFormatConfig `json:"configFormat,omitempty"`
+}
+
+// CurrencyPairsConfig stores a list of tradable currency pair settings
+type CurrencyPairsConfig struct {
+	RequestFormat       *CurrencyPairFormatConfig `json:"requestFormat,omitempty"`
+	ConfigFormat        *CurrencyPairFormatConfig `json:"configFormat,omitempty"`
+	UseGlobalPairFormat bool                      `json:"useGlobalPairFormat,omitempty"`
+
+	LastUpdated      int64 `json:"lastUpdated,omitempty"`
+	SupportsSpot     bool  `json:"supportsSpot,omitempty"`
+	SupportsLeverage bool  `json:"supportsLeverage,omitempty"`
+	SupportsFutures  bool  `json:"supportsFutures,omitempty"`
+
+	LeverageOptions []int  `json:"leverageOptions,omitempty"`
+	FuturesOptions  string `json:"futuresOptions,omitempty"`
+
+	AssetTypes string              `json:"assetTypes"`
+	Spot       *CurrencyPairConfig `json:"spot,omitempty"` // for futures only exchanges like Bitmex
+	Futures    *CurrencyPairConfig `json:"futures,omitempty"`
 }

@@ -33,9 +33,9 @@ func TestSetup(t *testing.T) {
 		t.Error("Test Failed - Okex Setup() init error")
 	}
 
-	okexConfig.AuthenticatedAPISupport = true
-	okexConfig.APIKey = apiKey
-	okexConfig.APISecret = apiSecret
+	okexConfig.API.AuthenticatedSupport = true
+	okexConfig.API.Credentials.Key = apiKey
+	okexConfig.API.Credentials.Secret = apiSecret
 
 	o.Setup(okexConfig)
 }
@@ -58,24 +58,12 @@ func TestGetContractPrice(t *testing.T) {
 	if err == nil {
 		t.Error("Test failed - okex GetContractPrice() error", err)
 	}
-	_, err = o.GetContractPrice("btc_bla", "this_week")
-	if err == nil {
-		t.Error("Test failed - okex GetContractPrice() error", err)
-	}
 }
 
 func TestGetContractMarketDepth(t *testing.T) {
 	t.Parallel()
 	_, err := o.GetContractMarketDepth("btc_usd", "this_week")
 	if err != nil {
-		t.Error("Test failed - okex GetContractMarketDepth() error", err)
-	}
-	_, err = o.GetContractMarketDepth("btc_bla", "123525")
-	if err == nil {
-		t.Error("Test failed - okex GetContractMarketDepth() error", err)
-	}
-	_, err = o.GetContractMarketDepth("btc_bla", "this_week")
-	if err == nil {
 		t.Error("Test failed - okex GetContractMarketDepth() error", err)
 	}
 }
@@ -87,10 +75,6 @@ func TestGetContractTradeHistory(t *testing.T) {
 		t.Error("Test failed - okex GetContractTradeHistory() error", err)
 	}
 	_, err = o.GetContractTradeHistory("btc_bla", "123525")
-	if err == nil {
-		t.Error("Test failed - okex GetContractTradeHistory() error", err)
-	}
-	_, err = o.GetContractTradeHistory("btc_bla", "this_week")
 	if err == nil {
 		t.Error("Test failed - okex GetContractTradeHistory() error", err)
 	}
@@ -122,10 +106,6 @@ func TestGetContractCandlestickData(t *testing.T) {
 	if err != nil {
 		t.Error("Test failed - okex GetContractCandlestickData() error", err)
 	}
-	_, err = o.GetContractCandlestickData("btc_bla", "1min", "this_week", 1, 2)
-	if err == nil {
-		t.Error("Test failed - okex GetContractCandlestickData() error", err)
-	}
 	_, err = o.GetContractCandlestickData("btc_usd", "min", "this_week", 1, 2)
 	if err == nil {
 		t.Error("Test failed - okex GetContractCandlestickData() error", err)
@@ -142,10 +122,6 @@ func TestGetContractHoldingsNumber(t *testing.T) {
 	if err != nil {
 		t.Error("Test failed - okex GetContractHoldingsNumber() error", err)
 	}
-	_, _, err = o.GetContractHoldingsNumber("btc_bla", "this_week")
-	if err == nil {
-		t.Error("Test failed - okex GetContractHoldingsNumber() error", err)
-	}
 	_, _, err = o.GetContractHoldingsNumber("btc_usd", "this_bla")
 	if err == nil {
 		t.Error("Test failed - okex GetContractHoldingsNumber() error", err)
@@ -156,10 +132,6 @@ func TestGetContractlimit(t *testing.T) {
 	t.Parallel()
 	_, err := o.GetContractlimit("btc_usd", "this_week")
 	if err != nil {
-		t.Error("Test failed - okex GetContractlimit() error", err)
-	}
-	_, err = o.GetContractlimit("btc_bla", "this_week")
-	if err == nil {
 		t.Error("Test failed - okex GetContractlimit() error", err)
 	}
 	_, err = o.GetContractlimit("btc_usd", "this_bla")
@@ -254,7 +226,7 @@ func TestGetSpotKline(t *testing.T) {
 func TestSpotNewOrder(t *testing.T) {
 	t.Parallel()
 
-	if o.APIKey == "" || o.APISecret == "" {
+	if !o.ValidateAPICredentials() {
 		t.Skip()
 	}
 
@@ -272,7 +244,7 @@ func TestSpotNewOrder(t *testing.T) {
 func TestSpotCancelOrder(t *testing.T) {
 	t.Parallel()
 
-	if o.APIKey == "" || o.APISecret == "" {
+	if !o.ValidateAPICredentials() {
 		t.Skip()
 	}
 
@@ -285,7 +257,7 @@ func TestSpotCancelOrder(t *testing.T) {
 func TestGetUserInfo(t *testing.T) {
 	t.Parallel()
 
-	if o.APIKey == "" || o.APISecret == "" {
+	if !o.ValidateAPICredentials() {
 		t.Skip()
 	}
 
@@ -400,18 +372,16 @@ func TestFormatWithdrawPermissions(t *testing.T) {
 // Any tests below this line have the ability to impact your orders on the exchange. Enable canManipulateRealOrders to run them
 // ----------------------------------------------------------------------------------------------------------------------------
 func isRealOrderTestEnabled() bool {
-	if o.APIKey == "" || o.APISecret == "" ||
-		o.APIKey == "Key" || o.APISecret == "Secret" ||
-		!canManipulateRealOrders {
+	if !o.ValidateAPICredentials() || !canManipulateRealOrders {
 		return false
 	}
+
 	return true
 }
 
 func TestSubmitOrder(t *testing.T) {
 	o.SetDefaults()
 	TestSetup(t)
-	o.Verbose = true
 
 	if !isRealOrderTestEnabled() {
 		t.Skip()
@@ -422,6 +392,7 @@ func TestSubmitOrder(t *testing.T) {
 		FirstCurrency:  symbol.BTC,
 		SecondCurrency: symbol.EUR,
 	}
+
 	response, err := o.SubmitOrder(p, exchange.Buy, exchange.Market, 1, 10, "hi")
 	if err != nil || !response.IsOrderPlaced {
 		t.Errorf("Order failed to be placed: %v", err)

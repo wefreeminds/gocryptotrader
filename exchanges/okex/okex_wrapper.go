@@ -6,13 +6,84 @@ import (
 	"log"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/thrasher-/gocryptotrader/common"
+	"github.com/thrasher-/gocryptotrader/config"
 	"github.com/thrasher-/gocryptotrader/currency/pair"
 	exchange "github.com/thrasher-/gocryptotrader/exchanges"
+	"github.com/thrasher-/gocryptotrader/exchanges/assets"
 	"github.com/thrasher-/gocryptotrader/exchanges/orderbook"
+	"github.com/thrasher-/gocryptotrader/exchanges/request"
 	"github.com/thrasher-/gocryptotrader/exchanges/ticker"
 )
+
+// SetDefaults method assignes the default values for Bittrex
+func (o *OKEX) SetDefaults() {
+	o.SetErrorDefaults()
+	o.SetCheckVarDefaults()
+	o.Name = "OKEX"
+	o.Enabled = true
+	o.Verbose = true
+	o.APIWithdrawPermissions = exchange.AutoWithdrawCrypto
+
+	o.CurrencyPairs = exchange.CurrencyPairs{
+		AssetTypes: assets.AssetTypes{
+			assets.AssetTypeSpot,
+		},
+
+		UseGlobalPairFormat: true,
+		RequestFormat: config.CurrencyPairFormatConfig{
+			Delimiter: "_",
+		},
+		ConfigFormat: config.CurrencyPairFormatConfig{
+			Delimiter: "_",
+			Uppercase: true,
+		},
+
+		SupportsSpot: true,
+	}
+
+	o.Features = exchange.Features{
+		Supports: exchange.FeaturesSupported{
+			AutoPairUpdates:    true,
+			RESTTickerBatching: false,
+			REST:               true,
+			Websocket:          true,
+		},
+		Enabled: exchange.FeaturesEnabled{
+			AutoPairUpdates: true,
+		},
+	}
+
+	o.Requester = request.New(o.Name,
+		request.NewRateLimit(time.Second, okexAuthRate),
+		request.NewRateLimit(time.Second, okexUnauthRate),
+		common.NewHTTPClientWithTimeout(exchange.DefaultHTTPTimeout))
+
+	o.API.Endpoints.URLDefault = apiURL
+	o.API.Endpoints.URL = o.API.Endpoints.URLDefault
+	o.WebsocketInit()
+}
+
+// Setup method sets current configuration details if enabled
+func (o *OKEX) Setup(exch config.ExchangeConfig) error {
+	if !exch.Enabled {
+		o.SetEnabled(false)
+		return nil
+	}
+
+	err := o.SetupDefaults(exch)
+	if err != nil {
+		return err
+	}
+
+	return o.WebsocketSetup(o.WsConnect,
+		exch.Name,
+		exch.Features.Enabled.Websocket,
+		okexDefaultWebsocketURL,
+		exch.API.Endpoints.WebsocketURL)
+}
 
 // Start starts the OKEX go routine
 func (o *OKEX) Start(wg *sync.WaitGroup) {
@@ -26,15 +97,25 @@ func (o *OKEX) Start(wg *sync.WaitGroup) {
 // Run implements the OKEX wrapper
 func (o *OKEX) Run() {
 	if o.Verbose {
-		log.Printf("%s Websocket: %s. (url: %s).\n", o.GetName(), common.IsEnabled(o.Websocket.IsEnabled()), o.WebsocketURL)
-		log.Printf("%s polling delay: %ds.\n", o.GetName(), o.RESTPollingDelay)
-		log.Printf("%s %d currencies enabled: %s.\n", o.GetName(), len(o.EnabledPairs), o.EnabledPairs)
+		log.Printf("%s Websocket: %s. (url: %s).\n", o.GetName(), common.IsEnabled(o.Websocket.IsEnabled()), o.API.Endpoints.WebsocketURL)
+		log.Printf("%s %d currencies enabled: %s.\n", o.GetName(), len(o.CurrencyPairs.Spot.Enabled), o.CurrencyPairs.Spot.Enabled)
 	}
 
+	if !o.GetEnabledFeatures().AutoPairUpdates {
+		return
+	}
+
+	err := o.UpdateTradablePairs(false)
+	if err != nil {
+		log.Printf("%s failed to update tradable pairs. Err: %s", o.Name, err)
+	}
+}
+
+// FetchTradablePairs returns a list of the exchanges tradable pairs
+func (o *OKEX) FetchTradablePairs() ([]string, error) {
 	prods, err := o.GetSpotInstruments()
 	if err != nil {
-		log.Printf("OKEX failed to obtain available spot instruments. Err: %d", err)
-		return
+		return nil, err
 	}
 
 	var pairs []string
@@ -42,19 +123,27 @@ func (o *OKEX) Run() {
 		pairs = append(pairs, prods[x].BaseCurrency+"_"+prods[x].QuoteCurrency)
 	}
 
-	err = o.UpdateCurrencies(pairs, false, false)
+	return pairs, nil
+}
+
+// UpdateTradablePairs updates the exchanges available pairs and stores
+// them in the exchanges config
+func (o *OKEX) UpdateTradablePairs(forceUpdate bool) error {
+	pairs, err := o.FetchTradablePairs()
 	if err != nil {
-		log.Printf("OKEX failed to update available currencies. Err: %s", err)
+		return err
 	}
+
+	return o.UpdatePairs(pairs, false, forceUpdate)
 }
 
 // UpdateTicker updates and returns the ticker for a currency pair
-func (o *OKEX) UpdateTicker(p pair.CurrencyPair, assetType string) (ticker.Price, error) {
-	currency := exchange.FormatExchangeCurrency(o.Name, p).String()
+func (o *OKEX) UpdateTicker(p pair.CurrencyPair, assetType assets.AssetType) (ticker.Price, error) {
+	currency := exchange.FormatExchangeCurrency(o.Name, p, assetType).String()
 	var tickerPrice ticker.Price
 
-	if assetType != ticker.Spot {
-		tick, err := o.GetContractPrice(currency, assetType)
+	if assetType != assets.AssetTypeSpot {
+		tick, err := o.GetContractPrice(currency, assetType.String())
 		if err != nil {
 			return tickerPrice, err
 		}
@@ -79,14 +168,14 @@ func (o *OKEX) UpdateTicker(p pair.CurrencyPair, assetType string) (ticker.Price
 		tickerPrice.Last = tick.Ticker.Last
 		tickerPrice.Volume = tick.Ticker.Vol
 		tickerPrice.High = tick.Ticker.High
-		ticker.ProcessTicker(o.GetName(), p, tickerPrice, ticker.Spot)
+		ticker.ProcessTicker(o.GetName(), p, tickerPrice, assets.AssetTypeSpot)
 
 	}
 	return ticker.GetTicker(o.Name, p, assetType)
 }
 
 // FetchTicker returns the ticker for a currency pair
-func (o *OKEX) FetchTicker(p pair.CurrencyPair, assetType string) (ticker.Price, error) {
+func (o *OKEX) FetchTicker(p pair.CurrencyPair, assetType assets.AssetType) (ticker.Price, error) {
 	tickerNew, err := ticker.GetTicker(o.GetName(), p, assetType)
 	if err != nil {
 		return o.UpdateTicker(p, assetType)
@@ -95,7 +184,7 @@ func (o *OKEX) FetchTicker(p pair.CurrencyPair, assetType string) (ticker.Price,
 }
 
 // FetchOrderbook returns orderbook base on the currency pair
-func (o *OKEX) FetchOrderbook(currency pair.CurrencyPair, assetType string) (orderbook.Base, error) {
+func (o *OKEX) FetchOrderbook(currency pair.CurrencyPair, assetType assets.AssetType) (orderbook.Base, error) {
 	ob, err := orderbook.GetOrderbook(o.GetName(), currency, assetType)
 	if err != nil {
 		return o.UpdateOrderbook(currency, assetType)
@@ -104,12 +193,12 @@ func (o *OKEX) FetchOrderbook(currency pair.CurrencyPair, assetType string) (ord
 }
 
 // UpdateOrderbook updates and returns the orderbook for a currency pair
-func (o *OKEX) UpdateOrderbook(p pair.CurrencyPair, assetType string) (orderbook.Base, error) {
+func (o *OKEX) UpdateOrderbook(p pair.CurrencyPair, assetType assets.AssetType) (orderbook.Base, error) {
 	var orderBook orderbook.Base
-	currency := exchange.FormatExchangeCurrency(o.Name, p).String()
+	currency := exchange.FormatExchangeCurrency(o.Name, p, assetType).String()
 
-	if assetType != ticker.Spot {
-		orderbookNew, err := o.GetContractMarketDepth(currency, assetType)
+	if assetType != assets.AssetTypeSpot {
+		orderbookNew, err := o.GetContractMarketDepth(currency, assetType.String())
 		if err != nil {
 			return orderBook, err
 		}
@@ -163,7 +252,7 @@ func (o *OKEX) GetFundingHistory() ([]exchange.FundHistory, error) {
 }
 
 // GetExchangeHistory returns historic trade data since exchange opening.
-func (o *OKEX) GetExchangeHistory(p pair.CurrencyPair, assetType string) ([]exchange.TradeHistory, error) {
+func (o *OKEX) GetExchangeHistory(p pair.CurrencyPair, assetType assets.AssetType) ([]exchange.TradeHistory, error) {
 	var resp []exchange.TradeHistory
 
 	return resp, common.ErrNotYetImplemented
@@ -224,7 +313,8 @@ func (o *OKEX) CancelOrder(order exchange.OrderCancellation) error {
 		return err
 	}
 
-	_, err = o.SpotCancelOrder(exchange.FormatExchangeCurrency(o.Name, order.CurrencyPair).String(), orderIDInt)
+	_, err = o.SpotCancelOrder(exchange.FormatExchangeCurrency(o.Name,
+		order.CurrencyPair, order.AssetType).String(), orderIDInt)
 
 	return err
 }
