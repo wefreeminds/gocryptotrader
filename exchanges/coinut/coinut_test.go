@@ -14,9 +14,9 @@ var c COINUT
 
 // Please supply your own keys here to do better tests
 const (
-	apiKey                  = ""
 	apiSecret               = ""
 	canManipulateRealOrders = false
+	XUser                   = ""
 )
 
 func TestSetDefaults(t *testing.T) {
@@ -34,6 +34,7 @@ func TestSetup(t *testing.T) {
 	bConfig.APISecret = apiSecret
 	bConfig.Verbose = true
 	c.Setup(bConfig)
+	c.ClientID = XUser
 
 	if !c.IsEnabled() ||
 		c.RESTPollingDelay != time.Duration(10) ||
